@@ -1,0 +1,9 @@
+*/target/*
+/target/
+*/.classpath
+/.java-version
+/.project
+/.settings/
+/streams/.factorypath
+/streams/.project
+/streams/.settings/
