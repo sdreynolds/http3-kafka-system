@@ -32,17 +32,17 @@ public final class FullTestIT {
       cluster.start();
       try (final var partitioner =
           new WebsocketPartitioner(
-              cluster.getBootstrapServers(), "basic-test", "events", "user-id")) {
+              cluster.getBootstrapServers(), "basic-test", "events", "account-id")) {
 
         assertThat(cluster.getBrokers()).hasSize(3);
 
         var subscription =
             partitioner.subscribe(
                 """
-            {
-            "event-type": [ "User Created" ],
-                    "user-id": [ "14" ]
-                    }""");
+                        {
+                        "event-type": [ "User Created" ],
+                                "account-id": [ "204", "50221" ]
+                                }""");
         assertThat(subscription.queue()).isEmpty();
 
         final Properties producerProps = new Properties();
@@ -55,19 +55,54 @@ public final class FullTestIT {
         final var producer = new KafkaProducer<Bytes, Map<String, String>>(producerProps);
 
         final var creationEvent =
-            Map.of("user-id", "14", "event-type", "User Created", "name", "scott reynolds");
+            Map.of(
+                "user-id",
+                "14",
+                "event-type",
+                "User Created",
+                "name",
+                "scott reynolds",
+                "account-id",
+                "204");
+        final var secondCreation =
+            Map.of(
+                "user-id",
+                "1287",
+                "event-type",
+                "User Created",
+                "name",
+                "scott reynolds",
+                "account-id",
+                "204");
         try {
-          producer.send(new ProducerRecord<Bytes, Map<String, String>>("events", creationEvent));
-          producer.send(
-              new ProducerRecord<Bytes, Map<String, String>>(
-                  "events",
-                  Map.of("user-id", "14", "event-type", "User Updated", "name", "Scott Reynolds")));
+          producer
+              .send(new ProducerRecord<Bytes, Map<String, String>>("events", creationEvent))
+              .get();
+          producer
+              .send(
+                  new ProducerRecord<Bytes, Map<String, String>>(
+                      "events",
+                      Map.of(
+                          "user-id",
+                          "14",
+                          "event-type",
+                          "User Updated",
+                          "name",
+                          "Scott Reynolds",
+                          "account-id",
+                          "204")))
+              .get();
+          producer
+              .send(new ProducerRecord<Bytes, Map<String, String>>("events", secondCreation))
+              .get();
         } finally {
           // @TODO: close with duration?
           producer.close();
         }
         assertThat(subscription.queue().poll(60, TimeUnit.SECONDS))
             .containsExactlyEntriesOf(creationEvent);
+        assertThat(subscription.queue().poll(60, TimeUnit.SECONDS))
+            .containsExactlyEntriesOf(secondCreation);
         assertThat(subscription.queue().poll(60, TimeUnit.MILLISECONDS)).isNull();
       }
     }
@@ -93,7 +128,9 @@ public final class FullTestIT {
         final var producer = new KafkaProducer<Bytes, Map<String, String>>(producerProps);
 
         try {
-            producer.send(new ProducerRecord<Bytes, Map<String, String>>("events", creationEvent)).get();
+          producer
+              .send(new ProducerRecord<Bytes, Map<String, String>>("events", creationEvent))
+              .get();
           Thread.sleep(java.time.Duration.ofMillis(250));
         } finally {
           // @TODO: close with duration?
@@ -103,23 +140,26 @@ public final class FullTestIT {
       try (final var partitioner =
           new WebsocketPartitioner(
               cluster.getBootstrapServers(), "basic-test", "events", "user-id")) {
-          var subscription =
-              partitioner.subscribe(
-                                    """
-            {
-            "event-type": [ "User Created" ],
-                    "user-id": [ "14" ]
-                    }""");
+        var subscription =
+            partitioner.subscribe(
+                """
+                            {
+                            "event-type": [ "User Created" ],
+                                    "user-id": [ "14" ]
+                                    }""");
 
         final var producer = new KafkaProducer<Bytes, Map<String, String>>(producerProps);
         try {
-            // need to send a record to trigger the processing loop
-            // @TODO: when a call to WebsocketPartitioner#subscribe(String), the method should
-            // scan the state stores for matching events.
-          producer.send(
-              new ProducerRecord<Bytes, Map<String, String>>(
-                  "events",
-                  Map.of("user-id", "14", "event-type", "User Updated", "name", "Scott Reynolds"))).get();
+          // need to send a record to trigger the processing loop
+          // @TODO: when a call to WebsocketPartitioner#subscribe(String), the method should
+          // scan the state stores for matching events.
+          producer
+              .send(
+                  new ProducerRecord<Bytes, Map<String, String>>(
+                      "events",
+                      Map.of(
+                          "user-id", "14", "event-type", "User Updated", "name", "Scott Reynolds")))
+              .get();
           Thread.sleep(java.time.Duration.ofSeconds(3));
         } finally {
           // @TODO: close with duration?
@@ -129,6 +169,64 @@ public final class FullTestIT {
         assertThat(subscription.queue().poll(60, TimeUnit.SECONDS))
             .containsExactlyEntriesOf(creationEvent);
         assertThat(subscription.queue().poll(60, TimeUnit.MILLISECONDS)).isNull();
+      }
+    }
+  }
+
+  @Test
+  void badKeyPath() throws Exception {
+    try (final var cluster = new KafkaContainerKraftCluster("7.2.6", 3, 2)) {
+      cluster.start();
+      try (final var partitioner =
+          new WebsocketPartitioner(
+              cluster.getBootstrapServers(), "badKeyPath", "events", "account-id")) {
+
+        assertThat(cluster.getBrokers()).hasSize(3);
+
+        var subscription =
+            partitioner.subscribe(
+                """
+                        {
+                        "event-type": [ "User Created" ],
+                                "account-id": [ "204", "50221" ]
+                                }""");
+        assertThat(subscription.queue()).isEmpty();
+
+        final Properties producerProps = new Properties();
+        producerProps.put("linger.ms", 1);
+        producerProps.put(
+            "value.serializer", "com.github.sdreynolds.streams.serde.JacksonSerializer");
+        producerProps.put(
+            "key.serializer", "org.apache.kafka.common.serialization.BytesSerializer");
+        producerProps.put("bootstrap.servers", cluster.getBootstrapServers());
+        final var producer = new KafkaProducer<Bytes, Map<String, String>>(producerProps);
+
+        final var creationEvent =
+            Map.of("user-id", "14", "event-type", "User Created", "name", "scott reynolds");
+        final var secondCreation =
+            Map.of(
+                "user-id",
+                "1287",
+                "event-type",
+                "User Created",
+                "name",
+                "scott reynolds",
+                "account-id",
+                "204");
+        try {
+          producer
+              .send(new ProducerRecord<Bytes, Map<String, String>>("events", creationEvent))
+              .get();
+          producer
+              .send(new ProducerRecord<Bytes, Map<String, String>>("events", secondCreation))
+              .get();
+        } finally {
+          // @TODO: close with duration?
+          producer.close();
+        }
+        assertThat(subscription.queue().poll(3, TimeUnit.SECONDS))
+            .containsExactlyEntriesOf(secondCreation);
+        assertThat(subscription.queue().poll(150, TimeUnit.MILLISECONDS)).isNull();
       }
     }
   }

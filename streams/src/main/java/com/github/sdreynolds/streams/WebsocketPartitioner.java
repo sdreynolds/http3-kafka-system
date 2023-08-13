@@ -19,8 +19,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.sdreynolds.streams.serde.JacksonSerde;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -29,15 +27,10 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.Grouped;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.SlidingWindows;
-import org.apache.kafka.streams.state.WindowStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.event.ruler.GenericMachine;
@@ -51,6 +44,7 @@ public final class WebsocketPartitioner implements AutoCloseable {
   private final KafkaStreams streamApplication;
 
   private static Logger logger = LoggerFactory.getLogger(WebsocketPartitioner.class);
+  private static ObjectMapper MAPPER = new ObjectMapper();
 
   public WebsocketPartitioner(
       String bootstrapServers,
@@ -61,55 +55,41 @@ public final class WebsocketPartitioner implements AutoCloseable {
     // Set a few key parameters
     settings.put(StreamsConfig.APPLICATION_ID_CONFIG, applicationName);
     settings.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-    // @TODO: the test runs too fast and results in failures when this is lower than 300
-    settings.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, "300");
 
     final var builder = new StreamsBuilder();
-    builder.stream(
-            topicName,
-            Consumed.with(Serdes.Bytes(), new JacksonSerde<>(new ObjectMapper(), Map.class)))
-        .<String>groupBy(
-            (key, jsonString) -> jsonString.get(jsonPartitionPath).toString(),
-            Grouped.with(Serdes.String(), new JacksonSerde<>(new ObjectMapper(), Map.class)))
-        .windowedBy(
-            SlidingWindows.ofTimeDifferenceAndGrace(Duration.ofSeconds(30), Duration.ofSeconds(1)))
-        .<Inbox>aggregate(
-            () -> new Inbox(new ArrayList<>(), new HashMap<>()),
-            (partitionKey, newEvent, inbox) -> {
-              final var events = new ArrayList<>(inbox.items());
-              final var cursors = new HashMap<>(inbox.cursorPosition());
 
-              events.add(newEvent);
-              for (int eventIdx = 0; eventIdx < events.size(); eventIdx++) {
-                matchAndSendEvent(eventIdx, newEvent, cursors);
+    builder.stream(topicName, Consumed.with(Serdes.Bytes(), new JacksonSerde<>(MAPPER, Map.class)))
+        .filter(
+            (unknownKey, jsonValue) -> {
+              final var maybeKey = jsonValue.get(jsonPartitionPath);
+              if (maybeKey == null) {
+                logger.error(
+                    "Event {} doesn't have a matching key path \"{}\"",
+                    jsonValue,
+                    jsonPartitionPath);
+                return false;
               }
-
-              return new Inbox(events, cursors);
-            },
-            Materialized.as("partioned-inbox")
-                .<String, Inbox, WindowStore<Bytes, byte[]>>with(
-                    Serdes.String(), new JacksonSerde<Inbox>(new ObjectMapper(), Inbox.class)));
-
+              return true;
+            })
+        // The filter above ensures the key is there and is not null
+        .selectKey((keyBytes, jsonValue) -> jsonValue.get(jsonPartitionPath).toString().getBytes())
+        .foreach(
+            (newKey, event) -> {
+              final JsonNode jacksonEvent = MAPPER.convertValue(event, JsonNode.class);
+              final var matchingSubIds = rulesMachine.rulesForJSONEvent(jacksonEvent);
+              matchingSubIds.forEach(
+                  subId -> {
+                    final var subscription = rules.get(subId);
+                    if (subscription != null) {
+                      if (subscription.queue().offer(event)) {
+                        logger.info("Sent event to {}", subId);
+                      }
+                    }
+                  });
+            });
     streamApplication = new KafkaStreams(builder.build(), settings);
     streamApplication.setStateListener(null);
     streamApplication.start();
-  }
-
-  private void matchAndSendEvent(
-      final Integer eventIdx, final Map<String, Object> event, final Map<UUID, Integer> cursors) {
-    final JsonNode jacksonEvent = new ObjectMapper().convertValue(event, JsonNode.class);
-    logger.info("Processing the following event: {}", jacksonEvent);
-    final var matchingSubIds = rulesMachine.rulesForJSONEvent(jacksonEvent);
-    matchingSubIds.forEach(
-        subId -> {
-          final var subscription = rules.get(subId);
-          if (subscription != null) {
-            if (cursors.getOrDefault(subId, -1) < eventIdx) {
-              cursors.put(subId, eventIdx);
-              subscription.queue().offer(event);
-            }
-          }
-        });
   }
 
   @Override
@@ -142,5 +122,3 @@ public final class WebsocketPartitioner implements AutoCloseable {
 
 record Subscription(
     UUID id, BlockingQueue<Map<String, Object>> queue, List<Map<String, List<Patterns>>> rules) {}
-
-record Inbox(List<Map<String, Object>> items, Map<UUID, Integer> cursorPosition) {}
