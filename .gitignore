@@ -4,6 +4,7 @@
 /.java-version
 /.project
 /.settings/
-/streams/.factorypath
-/streams/.project
-/streams/.settings/
+*/.factorypath
+*/.project
+*/.settings/
+*/.factorypath

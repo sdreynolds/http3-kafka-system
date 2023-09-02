@@ -75,7 +75,7 @@ public final class WebsocketPartitioner implements AutoCloseable {
         .selectKey((keyBytes, jsonValue) -> jsonValue.get(jsonPartitionPath).toString().getBytes())
         .foreach(
             (newKey, event) -> {
-              final JsonNode jacksonEvent = MAPPER.convertValue(event, JsonNode.class);
+              final var jacksonEvent = MAPPER.convertValue(event, JsonNode.class);
               final var matchingSubIds = rulesMachine.rulesForJSONEvent(jacksonEvent);
               matchingSubIds.forEach(
                   subId -> {
