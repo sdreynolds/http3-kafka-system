@@ -14,11 +14,15 @@
  */
 package com.github.sdreynolds.streams;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
 import software.amazon.event.ruler.Patterns;
 
-public record Subscription(
-    UUID id, BlockingQueue<Map<String, Object>> queue, List<Map<String, List<Patterns>>> rules) {}
+public interface SubscriptionService {
+  Subscription subscribe(final String rule) throws IOException;
+
+  void unsubscribe(final Subscription sub);
+
+  Subscription subscribe(final List<Map<String, List<Patterns>>> compiledPatterns);
+}

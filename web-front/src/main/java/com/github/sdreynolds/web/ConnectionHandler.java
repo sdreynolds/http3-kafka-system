@@ -29,8 +29,6 @@ import org.slf4j.LoggerFactory;
 public final class ConnectionHandler extends Http3RequestStreamInboundHandler {
   private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionHandler.class);
 
-  private boolean eventStream;
-
   @Override
   protected void channelRead(ChannelHandlerContext ctx, Http3HeadersFrame frame, boolean isLast) {
     if (isLast) {

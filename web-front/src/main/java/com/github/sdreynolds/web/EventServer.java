@@ -14,6 +14,7 @@
  */
 package com.github.sdreynolds.web;
 
+import com.github.sdreynolds.streams.SubscriptionService;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
@@ -49,7 +50,7 @@ public final class EventServer implements AutoCloseable {
   final Channel locationChannel;
   final Channel eventsChannel;
 
-  public EventServer(final int port) throws Exception {
+  public EventServer(final int port, final SubscriptionService service) throws Exception {
     locationGroup = new NioEventLoopGroup(1);
     eventGroup = new NioEventLoopGroup(1);
     SelfSignedCertificate cert = new SelfSignedCertificate();
@@ -108,7 +109,7 @@ public final class EventServer implements AutoCloseable {
                                   // Called for each request-stream,
                                   @Override
                                   protected void initChannel(QuicStreamChannel ch) {
-                                    ch.pipeline().addLast(new EventsHandler());
+                                    ch.pipeline().addLast(new EventsHandler(service));
                                   }
                                 }));
                   }

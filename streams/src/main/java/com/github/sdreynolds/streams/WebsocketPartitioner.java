@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.apache.kafka.common.serialization.Serdes;
@@ -37,7 +36,7 @@ import software.amazon.event.ruler.GenericMachine;
 import software.amazon.event.ruler.JsonRuleCompiler;
 import software.amazon.event.ruler.Patterns;
 
-public final class WebsocketPartitioner implements AutoCloseable {
+public final class WebsocketPartitioner implements AutoCloseable, SubscriptionService {
   private final Properties settings = new Properties();
   private final GenericMachine<UUID> rulesMachine = new GenericMachine<>();
   private final ConcurrentHashMap<UUID, Subscription> rules = new ConcurrentHashMap<>();
@@ -98,11 +97,13 @@ public final class WebsocketPartitioner implements AutoCloseable {
     rules.forEachValue(0, sub -> unsubscribe(sub));
   }
 
+  @Override
   public Subscription subscribe(final String rule) throws IOException {
     var compiledPatterns = JsonRuleCompiler.compile(rule);
     return subscribe(compiledPatterns);
   }
 
+  @Override
   public Subscription subscribe(final List<Map<String, List<Patterns>>> compiledPatterns) {
     final var ruleId = UUID.randomUUID();
     final LinkedBlockingQueue<Map<String, Object>> queue = new LinkedBlockingQueue<>();
@@ -112,6 +113,7 @@ public final class WebsocketPartitioner implements AutoCloseable {
     return sub;
   }
 
+  @Override
   public void unsubscribe(final Subscription sub) {
     sub.rules().forEach(r -> rulesMachine.deletePatternRule(sub.id(), r));
     // @TODO: assert sub.queue() == rules.remove(sub.id())
@@ -119,6 +121,3 @@ public final class WebsocketPartitioner implements AutoCloseable {
     sub.queue().clear();
   }
 }
-
-record Subscription(
-    UUID id, BlockingQueue<Map<String, Object>> queue, List<Map<String, List<Patterns>>> rules) {}

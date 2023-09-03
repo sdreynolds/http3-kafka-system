@@ -78,7 +78,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
             <dependency>
                 <groupId>org.apache.logging.log4j</groupId>
                 <artifactId>log4j-bom</artifactId>
@@ -94,6 +93,11 @@
                 <type>pom</type>
             </dependency>
             <dependency>
+                <groupId>com.github.com.sdreynolds</groupId>
+                <artifactId>streams</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.apache.kafka</groupId>
                 <artifactId>kafka-streams</artifactId>
                 <version>${kafka.version}</version>
@@ -107,6 +111,18 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>5.3.1</version> <!-- add this to properties -->
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-junit-jupiter</artifactId>
+                <version>5.3.1</version> <!-- add this to properties -->
                 <scope>test</scope>
             </dependency>
             <dependency>

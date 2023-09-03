@@ -16,23 +16,28 @@ package com.github.sdreynolds.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.github.sdreynolds.streams.SubscriptionService;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@ExtendWith(MockitoExtension.class)
 public final class Http3IT {
   private static final Logger LOGGER = LoggerFactory.getLogger(Http3IT.class);
 
   @Test
-  void connectToSameServer() throws Exception {
+  void connectToSameServer(@Mock SubscriptionService service) throws Exception {
     final Map<String, Object> testEvent = Map.of("awesome", "yes");
     final CompletionStage<Map<String, Object>> pendingEvent;
     LOGGER.info("About to start event server and client");
-    try (final var server = new EventServer(9090);
+    try (final var server = new EventServer(9090, service);
         final var client = new StreamWebClient("localhost", 9090, "123")) {
 
       LOGGER.info("Server and client started");

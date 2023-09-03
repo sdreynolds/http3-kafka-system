@@ -23,6 +23,7 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.incubator.codec.http3.DefaultHttp3DataFrame;
 import io.netty.incubator.codec.http3.DefaultHttp3HeadersFrame;
 import io.netty.incubator.codec.http3.Http3;
 import io.netty.incubator.codec.http3.Http3ClientConnectionHandler;
@@ -218,17 +219,30 @@ public final class StreamWebClient implements AutoCloseable {
                   final var eventFrame = new DefaultHttp3HeadersFrame();
                   eventFrame
                       .headers()
-                      .method("GET")
+                      .method("POST")
                       .path(String.format("/events/%s", primaryId))
                       .authority(serverLocation.toCompletableFuture().join().getHostString())
                       .scheme("https");
+
+                  final var requestBody =
+                      new DefaultHttp3DataFrame(
+                          io.netty.buffer.Unpooled.wrappedBuffer(
+                              """
+                        {
+                        "event-type": [ "User Created" ],
+                                "account-id": [ "204", "50221" ]
+                                }"""
+                                  .getBytes()));
 
                   final CompletableFuture<BlockingQueue<Map<String, Object>>> connected =
                       new CompletableFuture<>();
                   eventStream.addListener(
                       connectedStream -> {
                         if (connectedStream.isSuccess()) {
-                          ((QuicStreamChannel) connectedStream.getNow()).writeAndFlush(eventFrame);
+                          final QuicStreamChannel ch =
+                              ((QuicStreamChannel) connectedStream.getNow());
+                          ch.write(eventFrame);
+                          ch.writeAndFlush(requestBody);
                           connected.complete(events);
                         } else {
                           connected.completeExceptionally(connectedStream.exceptionNow());
