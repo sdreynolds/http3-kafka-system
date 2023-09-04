@@ -50,6 +50,8 @@ public final class EventServer implements AutoCloseable {
   final Channel locationChannel;
   final Channel eventsChannel;
 
+  final Bootstrap locationBootstrap;
+
   public EventServer(final int port, final SubscriptionService service) throws Exception {
     locationGroup = new NioEventLoopGroup(1);
     eventGroup = new NioEventLoopGroup(1);
@@ -115,7 +117,7 @@ public final class EventServer implements AutoCloseable {
                   }
                 })
             .build();
-    Bootstrap locationBootstrap = new Bootstrap();
+    locationBootstrap = new Bootstrap();
     locationChannel =
         locationBootstrap
             .group(locationGroup)
@@ -141,9 +143,13 @@ public final class EventServer implements AutoCloseable {
 
   @Override
   public void close() throws Exception {
-    locationGroup.shutdownGracefully();
-    eventGroup.shutdownGracefully();
-    locationChannel.closeFuture().sync();
-    eventsChannel.closeFuture().sync();
+    LOGGER.info("Starting close");
+    locationChannel.closeFuture().await(3, TimeUnit.SECONDS);
+    LOGGER.info("Location channel closed");
+    locationGroup.shutdownGracefully(3, 5, TimeUnit.SECONDS);
+    LOGGER.info("events channel starting");
+    eventsChannel.closeFuture().await(3, TimeUnit.SECONDS);
+    eventGroup.shutdownGracefully(3, 5, TimeUnit.SECONDS);
+    LOGGER.info("Ending close");
   }
 }

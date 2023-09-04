@@ -15,11 +15,18 @@
 package com.github.sdreynolds.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.when;
 
+import com.github.sdreynolds.streams.Subscription;
 import com.github.sdreynolds.streams.SubscriptionService;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,7 +48,14 @@ public final class Http3IT {
         final var client = new StreamWebClient("localhost", 9090, "123")) {
 
       LOGGER.info("Server and client started");
-      server.getConnectionQueue().offer(testEvent);
+
+      BlockingQueue<Map<String, Object>> subscriptionEvents =
+          new LinkedBlockingQueue<>(List.of(testEvent));
+      when(service.subscribe(anyList()))
+          .thenAnswer(
+              rules ->
+                  new Subscription(UUID.randomUUID(), subscriptionEvents, rules.getArgument(0)));
+
       pendingEvent =
           client
               .getEvents()
@@ -60,8 +74,9 @@ public final class Http3IT {
 
                     return testResult;
                   });
-      final var event = pendingEvent.toCompletableFuture().get(10010, TimeUnit.MILLISECONDS);
+      final var event = pendingEvent.toCompletableFuture().get(1000, TimeUnit.MILLISECONDS);
       assertThat(event).containsExactlyEntriesOf(testEvent);
     }
+    LOGGER.info("Closed all down");
   }
 }

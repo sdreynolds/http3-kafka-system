@@ -66,9 +66,8 @@ public final class WebsocketPartitioner implements AutoCloseable, SubscriptionSe
                     "Event {} doesn't have a matching key path \"{}\"",
                     jsonValue,
                     jsonPartitionPath);
-                return false;
               }
-              return true;
+              return maybeKey != null;
             })
         // The filter above ensures the key is there and is not null
         .selectKey((keyBytes, jsonValue) -> jsonValue.get(jsonPartitionPath).toString().getBytes())

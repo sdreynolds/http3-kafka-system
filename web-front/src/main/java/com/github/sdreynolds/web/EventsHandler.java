@@ -28,14 +28,22 @@ import io.netty.util.ReferenceCountUtil;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.event.ruler.JsonRuleCompiler;
 
-public final class EventsHandler extends Http3RequestStreamInboundHandler {
+public final class EventsHandler extends Http3RequestStreamInboundHandler implements Runnable {
   private static final Logger LOGGER = LoggerFactory.getLogger(EventsHandler.class);
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private final SubscriptionService service;
+
+  private final CountDownLatch latch = new CountDownLatch(1);
+
+  private BlockingQueue<Map<String, Object>> eventQueue;
+  private ChannelHandlerContext listenerCtx;
 
   EventsHandler(final SubscriptionService service) {
     this.service = service;
@@ -58,12 +66,19 @@ public final class EventsHandler extends Http3RequestStreamInboundHandler {
       var compiledPatterns = JsonRuleCompiler.compile(filter);
       // @TODO: create the polling loop with threads to push out to ctx
       final var sub = service.subscribe(compiledPatterns);
+      eventQueue = sub.queue();
+      listenerCtx = ctx;
+
+      ctx.channel().closeFuture().addListener(v -> latch.countDown());
     } catch (IOException compilationFailure) {
       LOGGER.error("failed to compile filter: {}", filter);
     }
 
     LOGGER.info("Content read {}", filter);
     writeResponse(ctx);
+
+    ctx.channel().eventLoop().submit(this);
+
     ReferenceCountUtil.release(frame);
   }
 
@@ -73,19 +88,36 @@ public final class EventsHandler extends Http3RequestStreamInboundHandler {
     headersFrame.headers().status("200");
     headersFrame.headers().add("server", "netty");
     ctx.write(headersFrame);
-
-    final Map<String, Object> event = Map.of("awesome", "yes");
-    try {
-      flushEvent(ctx, event);
-    } catch (Exception e) {
-      LOGGER.error("Failed to translated {} into json", event, e);
-    }
   }
 
-  private void flushEvent(final ChannelHandlerContext ctx, final Map<String, Object> event)
+  private void flushEvent(final Map<String, Object> event)
       throws JsonProcessingException, InterruptedException {
     final var encodedBytes = MAPPER.writeValueAsBytes(event);
     LOGGER.info("Writing out {}", new String(encodedBytes));
-    ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(encodedBytes)));
+    listenerCtx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(encodedBytes)));
+  }
+
+  @Override
+  public void run() {
+    LOGGER.info("Running thread");
+    while (latch.getCount() > 0) {
+      try {
+        final var event = eventQueue.poll(1500, TimeUnit.MILLISECONDS);
+        try {
+          if (event != null) {
+            flushEvent(event);
+          } else {
+            LOGGER.info("Nothing in the event");
+          }
+        } catch (JsonProcessingException e) {
+          LOGGER.error("Failed to process event into json {}", event, e);
+        }
+      } catch (InterruptedException e) {
+        // @TODO: look this back up and make sure this is the right way to
+        // handle
+        // @TODO: should this call `close()`
+        Thread.currentThread().interrupt();
+      }
+    }
   }
 }
