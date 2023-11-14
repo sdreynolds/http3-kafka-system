@@ -69,10 +69,13 @@ public final class EventsHandler extends Http3RequestStreamInboundHandler implem
       eventQueue = sub.queue();
       listenerCtx = ctx;
 
-      ctx.channel().closeFuture().addListener(v -> {
-              service.unsubscribe(sub);
-              latch.countDown();
-          });
+      ctx.channel()
+          .closeFuture()
+          .addListener(
+              v -> {
+                service.unsubscribe(sub);
+                latch.countDown();
+              });
     } catch (IOException compilationFailure) {
       LOGGER.error("failed to compile filter: {}", filter);
     }

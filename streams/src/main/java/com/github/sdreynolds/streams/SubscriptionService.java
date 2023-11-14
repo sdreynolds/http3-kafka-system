@@ -15,8 +15,10 @@
 package com.github.sdreynolds.streams;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionStage;
 import software.amazon.event.ruler.Patterns;
 
 public interface SubscriptionService {
@@ -25,4 +27,6 @@ public interface SubscriptionService {
   void unsubscribe(final Subscription sub);
 
   Subscription subscribe(final List<Map<String, List<Patterns>>> compiledPatterns);
+
+  CompletionStage<URI> findHostForKey(final String key);
 }
