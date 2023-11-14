@@ -16,10 +16,13 @@ package com.github.sdreynolds.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 import com.github.sdreynolds.streams.Subscription;
 import com.github.sdreynolds.streams.SubscriptionService;
+
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -43,18 +46,21 @@ public final class Http3IT {
   void connectToSameServer(@Mock SubscriptionService service) throws Exception {
     final Map<String, Object> testEvent = Map.of("awesome", "yes");
     final CompletionStage<Map<String, Object>> pendingEvent;
+
+    BlockingQueue<Map<String, Object>> subscriptionEvents = new LinkedBlockingQueue<>(List.of(testEvent));
+
+    when(service.findHostForKey(anyString()))
+            .thenReturn(CompletableFuture.completedStage(URI.create("/127.0.0.1:9090")));
+
+    when(service.subscribe(anyList()))
+            .thenAnswer(
+                    rules -> new Subscription(UUID.randomUUID(), subscriptionEvents, rules.getArgument(0)));
+
     LOGGER.info("About to start event server and client");
     try (final var server = new EventServer(9090, service);
         final var client = new StreamWebClient("localhost", 9090, "123")) {
 
       LOGGER.info("Server and client started");
-
-      BlockingQueue<Map<String, Object>> subscriptionEvents =
-          new LinkedBlockingQueue<>(List.of(testEvent));
-      when(service.subscribe(anyList()))
-          .thenAnswer(
-              rules ->
-                  new Subscription(UUID.randomUUID(), subscriptionEvents, rules.getArgument(0)));
 
       pendingEvent =
           client

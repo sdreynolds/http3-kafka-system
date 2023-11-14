@@ -75,7 +75,7 @@ public final class EventServer implements AutoCloseable {
                                   // Called for each request-stream,
                                   @Override
                                   protected void initChannel(QuicStreamChannel ch) {
-                                    ch.pipeline().addLast(new ConnectionHandler());
+                                    ch.pipeline().addLast(new ConnectionHandler(service));
                                   }
                                 }));
                   }

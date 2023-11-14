@@ -23,14 +23,27 @@ import io.netty.incubator.codec.http3.Http3HeadersFrame;
 import io.netty.incubator.codec.http3.Http3RequestStreamInboundHandler;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
 import io.netty.util.ReferenceCountUtil;
+
+import java.util.concurrent.CompletionStage;
+
+import com.github.sdreynolds.streams.SubscriptionService;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class ConnectionHandler extends Http3RequestStreamInboundHandler {
+final class ConnectionHandler extends Http3RequestStreamInboundHandler {
   private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionHandler.class);
+  private String subscriptionId;
+  private final SubscriptionService service;
+
+    ConnectionHandler(final SubscriptionService service) {
+        this.service = service;
+    }
 
   @Override
   protected void channelRead(ChannelHandlerContext ctx, Http3HeadersFrame frame, boolean isLast) {
+    subscriptionId = frame.headers().path().toString().substring(10);
+
     if (isLast) {
       writeResponse(ctx);
     }
@@ -45,15 +58,29 @@ public final class ConnectionHandler extends Http3RequestStreamInboundHandler {
     ReferenceCountUtil.release(frame);
   }
 
+  private CompletionStage<String> locateServer() {
+      return service.findHostForKey(subscriptionId).thenApply(uri -> uri.toString());
+  }
+
   private void writeResponse(ChannelHandlerContext ctx) {
-    LOGGER.info("Redirecting");
-    final byte[] location = "localhost:4056".getBytes();
-    Http3HeadersFrame headersFrame = new DefaultHttp3HeadersFrame();
-    headersFrame.headers().status("302");
-    headersFrame.headers().add("server", "netty");
-    headersFrame.headers().addInt("content-length", location.length);
-    ctx.write(headersFrame);
-    ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(location)))
-        .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+      locateServer().whenComplete((location, failure) -> {
+              if (failure != null) {
+                  Http3HeadersFrame errorHeaders = new DefaultHttp3HeadersFrame();
+                  errorHeaders.headers().status("500");
+                  ctx.writeAndFlush(errorHeaders)
+                      .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+
+                  return;
+              }
+          LOGGER.info("Redirecting");
+          final byte[] locationBytes = location.getBytes();
+          Http3HeadersFrame headersFrame = new DefaultHttp3HeadersFrame();
+          headersFrame.headers().status("302");
+          headersFrame.headers().add("server", "netty");
+          headersFrame.headers().addInt("content-length", locationBytes.length);
+          ctx.write(headersFrame);
+          ctx.writeAndFlush(new DefaultHttp3DataFrame(Unpooled.wrappedBuffer(locationBytes)))
+                  .addListener(QuicStreamChannel.SHUTDOWN_OUTPUT);
+      });
   }
 }
