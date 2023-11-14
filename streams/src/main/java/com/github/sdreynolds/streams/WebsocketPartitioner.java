@@ -121,10 +121,6 @@ public final class WebsocketPartitioner
 
   @Override
   public void close() {
-    streamApplication
-        .metadataForAllStreamsClients()
-        .forEach(metadata -> logger.info("names are {}", metadata.stateStoreNames()));
-
     streamApplication.close(Duration.ofMinutes(2));
     rules.forEachValue(0, sub -> unsubscribe(sub));
     admin.close(Duration.ofMinutes(2));
