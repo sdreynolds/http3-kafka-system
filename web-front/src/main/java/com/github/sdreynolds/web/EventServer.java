@@ -30,19 +30,12 @@ import io.netty.incubator.codec.quic.QuicChannel;
 import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
-import io.netty.util.CharsetUtil;
 import java.net.InetSocketAddress;
-import java.util.Map;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class EventServer implements AutoCloseable {
-  private Map<String, BlockingQueue<Map<String, Object>>> eventQueues =
-      Map.of("t", new LinkedBlockingQueue<>());
-  private static final byte[] CONTENT = "Hello World!\r\n".getBytes(CharsetUtil.US_ASCII);
   private static final Logger LOGGER = LoggerFactory.getLogger(EventServer.class);
 
   final EventLoopGroup locationGroup;
@@ -135,10 +128,6 @@ public final class EventServer implements AutoCloseable {
             .bind(new InetSocketAddress(4056))
             .sync()
             .channel();
-  }
-
-  public BlockingQueue<Map<String, Object>> getConnectionQueue() {
-    return eventQueues.get("t");
   }
 
   @Override
